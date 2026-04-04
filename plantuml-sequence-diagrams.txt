@@ -1,0 +1,107 @@
+@startuml Data_Extraction_Module_Sequence
+hide footbox
+
+actor Researcher
+participant PipelineOrchestrator
+participant DataExtractor
+participant "XSM FITS File" as XSMFITS
+participant "CLASS FITS Files" as CLASSFITS
+
+Researcher -> PipelineOrchestrator: runFullPipeline(rootDir)
+PipelineOrchestrator -> DataExtractor: loadXSMSolarFlux()
+DataExtractor -> XSMFITS: fits.open(xsmFilePath)
+XSMFITS --> DataExtractor: HDUList with DataArray
+DataExtractor -> DataExtractor: concatenate all DataArray rows
+DataExtractor -> DataExtractor: computeMeanFlux()
+DataExtractor --> PipelineOrchestrator: solarFlux = mean value
+
+PipelineOrchestrator -> DataExtractor: loadCLASSSpectra()
+DataExtractor -> DataExtractor: listCalibrated() -> sorted .fits list
+
+loop For each FITS file (141 files)
+  DataExtractor -> CLASSFITS: fits.open(filePath)
+  CLASSFITS --> DataExtractor: HDUList
+  DataExtractor -> DataExtractor: extract COUNTS array
+  DataExtractor -> DataExtractor: extractCoordinates(header)
+  DataExtractor -> DataExtractor: append spectrum + metadata
+end
+
+DataExtractor -> DataExtractor: np.array(all_spectra)
+DataExtractor -> DataExtractor: pd.DataFrame(metadata)
+DataExtractor --> PipelineOrchestrator: (spectra_array, meta_df)
+
+@enduml
+
+@startuml Ratio_Preprocessing_Module_Sequence
+hide footbox
+
+participant PipelineOrchestrator
+participant RatioPreprocessor
+participant StandardScaler
+
+PipelineOrchestrator -> RatioPreprocessor: normalizeBySolarFlux(spectra, solarFlux)
+RatioPreprocessor -> RatioPreprocessor: spectra / solarFlux -> normalized_spectra
+RatioPreprocessor --> PipelineOrchestrator: normalized_spectra
+
+PipelineOrchestrator -> RatioPreprocessor: computeMgSiRatio(normalized_spectra)
+RatioPreprocessor -> RatioPreprocessor: Mg_band = mean(channels 150-350)
+RatioPreprocessor -> RatioPreprocessor: Si_band = mean(channels 400-700)
+RatioPreprocessor -> RatioPreprocessor: ratio = Mg_band / Si_band
+RatioPreprocessor --> PipelineOrchestrator: mgSiRatio
+
+PipelineOrchestrator -> RatioPreprocessor: computeAlSiRatio(normalized_spectra)
+RatioPreprocessor -> RatioPreprocessor: Al_band = mean(channels 300-500)
+RatioPreprocessor -> RatioPreprocessor: Si_band = mean(channels 400-700)
+RatioPreprocessor -> RatioPreprocessor: ratio = Al_band / Si_band
+RatioPreprocessor --> PipelineOrchestrator: alSiRatio
+
+PipelineOrchestrator -> RatioPreprocessor: fitTransform(normalized_spectra)
+RatioPreprocessor -> RatioPreprocessor: reshape to 2D (n_samples x n_channels)
+RatioPreprocessor -> StandardScaler: fit_transform(spectra_flat)
+StandardScaler -> StandardScaler: compute mean and std per feature
+StandardScaler --> RatioPreprocessor: X_standardized (mean~0, std~1)
+RatioPreprocessor --> PipelineOrchestrator: X_standardized
+
+@enduml
+
+@startuml CNN_Inference_Module_Sequence
+hide footbox
+
+participant PipelineOrchestrator
+participant CNNTrainer
+participant SpectralCNN
+participant DataLoader
+
+PipelineOrchestrator -> CNNTrainer: prepareTargets(X_standardized)
+CNNTrainer -> DataLoader: create train/val DataLoaders
+DataLoader --> CNNTrainer: trainLoader, valLoader
+CNNTrainer -> CNNTrainer: derive pseudo-targets from spectral bands
+CNNTrainer -> CNNTrainer: normalize targets to [0, 1]
+CNNTrainer --> PipelineOrchestrator: y_targets (n x 5)
+
+PipelineOrchestrator -> CNNTrainer: trainModel(X_standardized, y_targets)
+CNNTrainer -> SpectralCNN: initialise SpectralCNN()
+SpectralCNN --> CNNTrainer: model instance
+CNNTrainer -> DataLoader: create train/val DataLoaders
+DataLoader --> CNNTrainer: trainLoader, valLoader
+
+loop epoch = 1 to 100
+  CNNTrainer -> SpectralCNN: forward(batch_X)
+  SpectralCNN -> SpectralCNN: Conv1D -> BN -> ReLU -> Pool (x3)
+  SpectralCNN -> SpectralCNN: GlobalAvgPool -> FC -> Dropout -> Sigmoid
+  SpectralCNN --> CNNTrainer: predictions (batch x 5)
+  CNNTrainer -> CNNTrainer: compute MSELoss
+  CNNTrainer -> CNNTrainer: backward() + clip_grad_norm
+  CNNTrainer -> CNNTrainer: optimizer.step()
+  CNNTrainer -> CNNTrainer: validate on val_loader
+  CNNTrainer -> CNNTrainer: scheduler.step(val_loss)
+end
+
+CNNTrainer --> PipelineOrchestrator: trained model, train_losses, val_losses
+
+PipelineOrchestrator -> CNNTrainer: predict(X_standardized)
+CNNTrainer -> SpectralCNN: forward(all_spectra) [eval mode]
+SpectralCNN --> CNNTrainer: abundance predictions (141 x 5)
+CNNTrainer --> PipelineOrchestrator: predictions [Mg, Al, Si, Ca, Fe]
+
+@enduml

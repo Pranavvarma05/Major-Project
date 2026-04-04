@@ -1,0 +1,41 @@
+@startuml CNN_Inference_Module_Sequence
+hide footbox
+
+participant PipelineOrchestrator
+participant CNNTrainer
+participant SpectralCNN
+participant DataLoader
+
+PipelineOrchestrator -> CNNTrainer: prepareTargets(X_standardized)
+CNNTrainer -> DataLoader: create train/val DataLoaders
+DataLoader --> CNNTrainer: trainLoader, valLoader
+CNNTrainer -> CNNTrainer: derive pseudo-targets from spectral bands
+CNNTrainer -> CNNTrainer: normalize targets to [0, 1]
+CNNTrainer --> PipelineOrchestrator: y_targets (n x 5)
+
+PipelineOrchestrator -> CNNTrainer: trainModel(X_standardized, y_targets)
+CNNTrainer -> SpectralCNN: initialise SpectralCNN()
+SpectralCNN --> CNNTrainer: model instance
+CNNTrainer -> DataLoader: create train/val DataLoaders
+DataLoader --> CNNTrainer: trainLoader, valLoader
+
+loop epoch = 1 to 100
+  CNNTrainer -> SpectralCNN: forward(batch_X)
+  SpectralCNN -> SpectralCNN: Conv1D -> BN -> ReLU -> Pool (x3)
+  SpectralCNN -> SpectralCNN: GlobalAvgPool -> FC -> Dropout -> Sigmoid
+  SpectralCNN --> CNNTrainer: predictions (batch x 5)
+  CNNTrainer -> CNNTrainer: compute MSELoss
+  CNNTrainer -> CNNTrainer: backward() + clip_grad_norm
+  CNNTrainer -> CNNTrainer: optimizer.step()
+  CNNTrainer -> CNNTrainer: validate on val_loader
+  CNNTrainer -> CNNTrainer: scheduler.step(val_loss)
+end
+
+CNNTrainer --> PipelineOrchestrator: trained model, train_losses, val_losses
+
+PipelineOrchestrator -> CNNTrainer: predict(X_standardized)
+CNNTrainer -> SpectralCNN: forward(all_spectra) [eval mode]
+SpectralCNN --> CNNTrainer: abundance predictions (141 x 5)
+CNNTrainer --> PipelineOrchestrator: predictions [Mg, Al, Si, Ca, Fe]
+
+@enduml

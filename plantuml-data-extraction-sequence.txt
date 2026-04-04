@@ -1,0 +1,33 @@
+@startuml Data_Extraction_Module_Sequence
+hide footbox
+
+actor Researcher
+participant PipelineOrchestrator
+participant DataExtractor
+participant "XSM FITS File" as XSMFITS
+participant "CLASS FITS Files" as CLASSFITS
+
+Researcher -> PipelineOrchestrator: runFullPipeline(rootDir)
+PipelineOrchestrator -> DataExtractor: loadXSMSolarFlux()
+DataExtractor -> XSMFITS: fits.open(xsmFilePath)
+XSMFITS --> DataExtractor: HDUList with DataArray
+DataExtractor -> DataExtractor: concatenate all DataArray rows
+DataExtractor -> DataExtractor: computeMeanFlux()
+DataExtractor --> PipelineOrchestrator: solarFlux = mean value
+
+PipelineOrchestrator -> DataExtractor: loadCLASSSpectra()
+DataExtractor -> DataExtractor: listCalibrated() -> sorted .fits list
+
+loop For each FITS file (141 files)
+  DataExtractor -> CLASSFITS: fits.open(filePath)
+  CLASSFITS --> DataExtractor: HDUList
+  DataExtractor -> DataExtractor: extract COUNTS array
+  DataExtractor -> DataExtractor: extractCoordinates(header)
+  DataExtractor -> DataExtractor: append spectrum + metadata
+end
+
+DataExtractor -> DataExtractor: np.array(all_spectra)
+DataExtractor -> DataExtractor: pd.DataFrame(metadata)
+DataExtractor --> PipelineOrchestrator: (spectra_array, meta_df)
+
+@enduml

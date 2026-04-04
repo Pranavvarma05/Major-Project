@@ -1,0 +1,32 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap");
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  font-family: "Sora", "Trebuchet MS", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  color: #f4f8ff;
+  background: #040811;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}

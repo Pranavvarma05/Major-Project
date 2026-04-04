@@ -1,0 +1,31 @@
+@startuml Ratio_Preprocessing_Module_Sequence
+hide footbox
+
+participant PipelineOrchestrator
+participant RatioPreprocessor
+participant StandardScaler
+
+PipelineOrchestrator -> RatioPreprocessor: normalizeBySolarFlux(spectra, solarFlux)
+RatioPreprocessor -> RatioPreprocessor: spectra / solarFlux -> normalized_spectra
+RatioPreprocessor --> PipelineOrchestrator: normalized_spectra
+
+PipelineOrchestrator -> RatioPreprocessor: computeMgSiRatio(normalized_spectra)
+RatioPreprocessor -> RatioPreprocessor: Mg_band = mean(channels 150-350)
+RatioPreprocessor -> RatioPreprocessor: Si_band = mean(channels 400-700)
+RatioPreprocessor -> RatioPreprocessor: ratio = Mg_band / Si_band
+RatioPreprocessor --> PipelineOrchestrator: mgSiRatio
+
+PipelineOrchestrator -> RatioPreprocessor: computeAlSiRatio(normalized_spectra)
+RatioPreprocessor -> RatioPreprocessor: Al_band = mean(channels 300-500)
+RatioPreprocessor -> RatioPreprocessor: Si_band = mean(channels 400-700)
+RatioPreprocessor -> RatioPreprocessor: ratio = Al_band / Si_band
+RatioPreprocessor --> PipelineOrchestrator: alSiRatio
+
+PipelineOrchestrator -> RatioPreprocessor: fitTransform(normalized_spectra)
+RatioPreprocessor -> RatioPreprocessor: reshape to 2D (n_samples x n_channels)
+RatioPreprocessor -> StandardScaler: fit_transform(spectra_flat)
+StandardScaler -> StandardScaler: compute mean and std per feature
+StandardScaler --> RatioPreprocessor: X_standardized (mean~0, std~1)
+RatioPreprocessor --> PipelineOrchestrator: X_standardized
+
+@enduml
