@@ -1,5 +1,6 @@
 .app-shell {
-  min-height: 100svh;
+  height: 100svh;
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
   background:
@@ -18,6 +19,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  overflow-y: auto;
 }
 
 .panel-kicker {
@@ -232,63 +234,14 @@
   font-size: 0.82rem;
 }
 
-.hover-card {
-  border: 1px solid rgba(214, 232, 255, 0.26);
-  background: rgba(8, 16, 28, 0.9);
-  border-radius: 0.72rem;
-  padding: 0.68rem;
-  display: grid;
-  gap: 0.3rem;
-}
-
-.hover-card h2 {
-  margin: 0 0 0.15rem;
-  font-size: 0.8rem;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #f5f9ff;
-}
-
-.hover-card p {
-  margin: 0;
-  display: flex;
-  justify-content: space-between;
-  gap: 0.8rem;
-  font-family: "Space Mono", Consolas, monospace;
-  font-size: 0.76rem;
-  color: #d9e7fc;
-}
-
-.hover-card span {
-  color: #95b2db;
-}
-
-.element-values-grid {
-  margin-top: 0.2rem;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.28rem 0.42rem;
-}
-
-.element-values-grid p {
-  border: 1px solid rgba(176, 203, 234, 0.23);
-  background: rgba(10, 20, 34, 0.65);
-  border-radius: 0.45rem;
-  padding: 0.26rem 0.35rem;
-}
-
-.element-values-grid p.active-value {
-  border-color: rgba(255, 197, 152, 0.88);
-  background: rgba(41, 23, 15, 0.7);
-}
 
 .scene-pane {
   position: relative;
-  min-height: 100svh;
+  min-height: 0;
 }
 
 .scene-pane::after {
-  content: "Drag to orbit | Scroll to zoom | Hover to inspect | Click to select";
+  content: "Drag to orbit · Scroll to zoom · Click any point to see its composition";
   position: absolute;
   right: 1.15rem;
   bottom: 1rem;
@@ -301,6 +254,49 @@
   border-radius: 0.6rem;
   padding: 0.42rem 0.6rem;
   pointer-events: none;
+}
+
+.coord-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.coord-input {
+  border-radius: 0.55rem;
+  border: 1px solid rgba(194, 216, 245, 0.36);
+  padding: 0.45rem 0.55rem;
+  color: #f5f9ff;
+  background: rgba(10, 17, 28, 0.88);
+  width: 100%;
+  font-size: 0.82rem;
+  box-sizing: border-box;
+}
+
+.coord-input::placeholder {
+  color: #6a8aae;
+  font-size: 0.74rem;
+}
+
+.coord-find-btn {
+  width: 100%;
+  border: 1px solid rgba(189, 220, 255, 0.32);
+  border-radius: 0.7rem;
+  background: rgba(23, 36, 58, 0.8);
+  color: #e9f4ff;
+  padding: 0.52rem 0.72rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: background-color 0.2s ease;
+}
+
+.coord-find-btn:hover:not(:disabled) {
+  background: rgba(34, 55, 85, 0.96);
+}
+
+.coord-find-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .point-modal-backdrop {
@@ -395,37 +391,137 @@
   font-family: "Space Mono", Consolas, monospace;
 }
 
+/* Tablet — panel stacks above canvas, both fit in 100svh */
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(340px, 1fr);
+    grid-template-rows: minmax(0, 44svh) 1fr;
   }
 
   .control-panel {
     border-right: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.16);
-    padding: 1rem 0.9rem;
+    padding: 0.9rem;
+    gap: 0.65rem;
   }
 
   .panel-title {
-    font-size: clamp(1.25rem, 4.6vw, 2rem);
+    font-size: clamp(1.1rem, 4vw, 1.8rem);
   }
 
-  .element-pills {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .scene-pane {
-    min-height: 58svh;
+  .segmented {
+    grid-template-columns: 1fr 1fr;
   }
 
   .scene-pane::after {
     right: 0.62rem;
     bottom: 0.55rem;
     font-size: 0.68rem;
+    content: "Drag to orbit · Click a point to see its composition";
   }
 
   .point-modal-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Phone landscape / small tablet */
+@media (max-width: 640px) {
+  .app-shell {
+    grid-template-rows: minmax(0, 40svh) 1fr;
+  }
+
+  .control-panel {
+    padding: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .panel-description {
+    display: none;
+  }
+
+  .value-note {
+    display: none;
+  }
+
+  .coord-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .scene-pane::after {
+    content: "Drag · Click a point to inspect";
+    font-size: 0.64rem;
+    padding: 0.3rem 0.48rem;
+  }
+
+  .point-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .point-modal {
+    width: 100%;
+    border-radius: 0.9rem 0.9rem 0 0;
+    padding: 0.75rem;
+    max-height: 75svh;
+    overflow-y: auto;
+  }
+}
+
+/* Phone portrait */
+@media (max-width: 480px) {
+  .app-shell {
+    grid-template-rows: minmax(0, 38svh) 1fr;
+  }
+
+  .control-panel {
+    padding: 0.65rem;
+    gap: 0.42rem;
+  }
+
+  .panel-kicker {
+    font-size: 0.64rem;
+  }
+
+  .panel-title {
+    font-size: 1rem;
+  }
+
+  .segmented button {
+    padding: 0.42rem 0.5rem;
+    font-size: 0.78rem;
+  }
+
+  .range-caption {
+    display: none;
+  }
+
+  .legend-scale {
+    font-size: 0.6rem;
+  }
+
+  .stats-grid {
+    gap: 0.3rem;
+  }
+
+  .stats-grid article {
+    padding: 0.32rem 0.4rem;
+  }
+
+  .stats-grid h2 {
+    font-size: 0.62rem;
+  }
+
+  .stats-grid p {
+    font-size: 0.78rem;
+  }
+
+  .coord-row {
+    grid-template-columns: 1fr;
+  }
+
+  .scene-pane::after {
+    content: "Drag · Click to inspect";
+    font-size: 0.6rem;
   }
 }

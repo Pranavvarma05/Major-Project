@@ -21,7 +21,6 @@ interface HoverPoint {
 
 const ELEMENT_KEYS: ElementKey[] = ["Mg", "Al", "Si", "Ca", "Fe"];
 const INITIAL_DISPLAY_LIMIT = 12000;
-const HOVER_POINT_LIMIT = 60000;
 
 // Pre-compute a 1024-step LUT from the shared gradient
 const COLOR_LUT: Float32Array = (() => {
@@ -128,14 +127,15 @@ function PointCloud({
 
 function App() {
   const [workerData, setWorkerData] = useState<WorkerResult | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("xyz");
+  const [viewMode, setViewMode] = useState<ViewMode>("latlon");
   const [activeElement, setActiveElement] = useState<ElementKey>("Mg");
   const [displayLimit, setDisplayLimit] = useState<number>(INITIAL_DISPLAY_LIMIT);
   const [pointSize, setPointSize] = useState<number>(0.018);
-  const [hoveredPoint, setHoveredPoint] = useState<HoverPoint | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<HoverPoint | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [coordLat, setCoordLat] = useState<string>("");
+  const [coordLon, setCoordLon] = useState<string>("");
 
   useEffect(() => {
     setLoading(true);
@@ -162,7 +162,8 @@ function App() {
       worker.terminate();
     };
 
-    worker.postMessage({ url: "/lunar_map.json" });
+    const dataUrl = import.meta.env.VITE_LUNAR_MAP_URL ?? "/lunar_map.json";
+    worker.postMessage({ url: dataUrl });
     return () => { worker.terminate(); };
   }, []);
 
@@ -218,8 +219,6 @@ function App() {
     return buf;
   }, [workerData, sampledIndices, activeElement, activeElementIndex, activeElementRange]);
 
-  const hoverEnabled = sampledIndices.length <= HOVER_POINT_LIMIT;
-
   const lookupPoint = useCallback((visibleIndex: number): HoverPoint | null => {
     if (!workerData) return null;
     const i = sampledIndices[visibleIndex];
@@ -243,6 +242,36 @@ function App() {
     };
   }, [workerData, sampledIndices]);
 
+  const findNearestPoint = useCallback((lat: number, lon: number) => {
+    if (!workerData) return;
+    const m = workerData.metadata;
+    const total = workerData.count;
+    let bestDist = Infinity;
+    let bestIdx = 0;
+    for (let i = 0; i < total; i++) {
+      const dlat = m[i * 6] - lat;
+      const dlon = m[i * 6 + 1] - lon;
+      const dist = dlat * dlat + dlon * dlon;
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+    }
+    const e = workerData.elementValues;
+    setSelectedPoint({
+      lat: m[bestIdx * 6],
+      lon: m[bestIdx * 6 + 1],
+      x:   m[bestIdx * 6 + 2],
+      y:   m[bestIdx * 6 + 3],
+      z:   m[bestIdx * 6 + 4],
+      dominant: ELEMENT_KEYS[m[bestIdx * 6 + 5]] ?? "Mg",
+      elements: {
+        Mg: e[bestIdx * 5],
+        Al: e[bestIdx * 5 + 1],
+        Si: e[bestIdx * 5 + 2],
+        Ca: e[bestIdx * 5 + 3],
+        Fe: e[bestIdx * 5 + 4],
+      },
+    });
+  }, [workerData]);
+
   const densityOptions = useMemo(() => {
     if (!count) return [];
     return [3000, 6000, 12000, 24000, 48000, 96000, 150000, Math.min(250000, count), count]
@@ -259,9 +288,6 @@ function App() {
     });
     return `linear-gradient(90deg, ${stops.join(", ")})`;
   }, []);
-
-  useEffect(() => { setHoveredPoint(null); }, [activeElement, displayLimit, viewMode]);
-  useEffect(() => { if (!hoverEnabled) setHoveredPoint(null); }, [hoverEnabled]);
 
   useEffect(() => {
     if (!selectedPoint) return;
@@ -357,12 +383,6 @@ function App() {
           <p className="range-caption">
             5L+ points can be slow because uploading large point buffers to the GPU is expensive.
           </p>
-          {!hoverEnabled && (
-            <p className="range-caption">
-              Hover inspector is paused above {HOVER_POINT_LIMIT.toLocaleString()} rendered
-              points to keep interaction smoother.
-            </p>
-          )}
         </div>
 
         <div className="field">
@@ -393,31 +413,45 @@ function App() {
           </article>
         </div>
 
-        {error && <p className="error-box">{error}</p>}
+        <div className="field">
+          <label>Jump to coordinates</label>
+          <div className="coord-row">
+            <input
+              type="number"
+              className="coord-input"
+              placeholder="Lat (−90 to 90)"
+              min={-90}
+              max={90}
+              step={0.001}
+              value={coordLat}
+              onChange={(e) => setCoordLat(e.target.value)}
+            />
+            <input
+              type="number"
+              className="coord-input"
+              placeholder="Lon (−180 to 180)"
+              min={-180}
+              max={180}
+              step={0.001}
+              value={coordLon}
+              onChange={(e) => setCoordLon(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className="coord-find-btn"
+            disabled={!workerData || coordLat === "" || coordLon === ""}
+            onClick={() => {
+              const la = parseFloat(coordLat);
+              const lo = parseFloat(coordLon);
+              if (!isNaN(la) && !isNaN(lo)) findNearestPoint(la, lo);
+            }}
+          >
+            Find nearest point
+          </button>
+        </div>
 
-        {!error && hoveredPoint && (
-          <section className="hover-card">
-            <h2>Point Inspector</h2>
-            <p><span>lat</span><strong>{hoveredPoint.lat.toFixed(5)}</strong></p>
-            <p><span>long</span><strong>{hoveredPoint.lon.toFixed(5)}</strong></p>
-            <p><span>x</span><strong>{hoveredPoint.x.toFixed(3)}</strong></p>
-            <p><span>y</span><strong>{hoveredPoint.y.toFixed(3)}</strong></p>
-            <p><span>z</span><strong>{hoveredPoint.z.toFixed(3)}</strong></p>
-            <p><span>dominant</span><strong>{hoveredPoint.dominant}</strong></p>
-            <p>
-              <span>{activeElement} value</span>
-              <strong>{hoveredPoint.elements[activeElement].toFixed(6)}</strong>
-            </p>
-            <div className="element-values-grid" aria-label="Element amounts">
-              {ELEMENT_KEYS.map((key) => (
-                <p key={key} className={key === activeElement ? "active-value" : ""}>
-                  <span>{key}</span>
-                  <strong>{hoveredPoint.elements[key].toFixed(6)}</strong>
-                </p>
-              ))}
-            </div>
-          </section>
-        )}
+        {error && <p className="error-box">{error}</p>}
       </aside>
 
       <section className="scene-pane" aria-label="3D lunar scene">
@@ -440,9 +474,9 @@ function App() {
               positions={positionBuffer}
               colors={colorBuffer}
               pointSize={pointSize}
-              onHoverIndex={(idx) => setHoveredPoint(idx !== null ? lookupPoint(idx) : null)}
+              onHoverIndex={() => {}}
               onSelectIndex={(idx) => setSelectedPoint(idx !== null ? lookupPoint(idx) : null)}
-              interactive={hoverEnabled}
+              interactive={false}
             />
           )}
 
