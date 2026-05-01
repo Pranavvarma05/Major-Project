@@ -1,3 +1,5 @@
+/// <reference lib="webworker" />
+
 type ElementKey = "Mg" | "Al" | "Si" | "Ca" | "Fe";
 const ELEMENT_KEYS: ElementKey[] = ["Mg", "Al", "Si", "Ca", "Fe"];
 

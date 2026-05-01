@@ -1,8 +1,10 @@
 import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import * as THREE from "three";
 import "./App.css";
 import type { WorkerResult } from "./dataWorker";
+import { HEATMAP_STOPS, getHeatColor } from "./heatmapTypes";
 
 type ElementKey = "Mg" | "Al" | "Si" | "Ca" | "Fe";
 type ViewMode = "xyz" | "latlon";
@@ -21,30 +23,11 @@ const ELEMENT_KEYS: ElementKey[] = ["Mg", "Al", "Si", "Ca", "Fe"];
 const INITIAL_DISPLAY_LIMIT = 12000;
 const HOVER_POINT_LIMIT = 60000;
 
-const HEATMAP_STOPS: [number, number, number][] = [
-  [0.09, 0.12, 0.28],
-  [0.11, 0.35, 0.78],
-  [0.1,  0.76, 0.96],
-  [0.96, 0.9,  0.21],
-  [0.93, 0.28, 0.17],
-];
-
-function getElementHeatColor(t: number): [number, number, number] {
-  const clamped = Math.max(0, Math.min(1, t));
-  const scaled = clamped * (HEATMAP_STOPS.length - 1);
-  const li = Math.floor(scaled);
-  const ri = Math.min(HEATMAP_STOPS.length - 1, li + 1);
-  const mix = scaled - li;
-  const l = HEATMAP_STOPS[li];
-  const r = HEATMAP_STOPS[ri];
-  return [l[0] + (r[0] - l[0]) * mix, l[1] + (r[1] - l[1]) * mix, l[2] + (r[2] - l[2]) * mix];
-}
-
-// Pre-compute a 1024-step LUT so the inner color loop avoids repeated interpolation math
+// Pre-compute a 1024-step LUT from the shared gradient
 const COLOR_LUT: Float32Array = (() => {
   const lut = new Float32Array(1024 * 3);
   for (let i = 0; i < 1024; i++) {
-    const [r, g, b] = getElementHeatColor(i / 1023);
+    const [r, g, b] = getHeatColor(i / 1023);
     lut[i * 3] = r; lut[i * 3 + 1] = g; lut[i * 3 + 2] = b;
   }
   return lut;
@@ -86,6 +69,34 @@ function PointCloud({
   onSelectIndex: (index: number | null) => void;
   interactive: boolean;
 }) {
+  const geoRef = useRef<THREE.BufferGeometry>(null);
+
+  // Sync positions — runs before paint so no blank-frame on mount.
+  useLayoutEffect(() => {
+    const geo = geoRef.current;
+    if (!geo) return;
+    const cur = geo.getAttribute("position") as THREE.BufferAttribute | undefined;
+    if (cur && cur.array.length === positions.length) {
+      cur.set(positions);
+      cur.needsUpdate = true;
+    } else {
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    }
+  }, [positions]);
+
+  // Sync colors — same-size updates skip GPU reallocation.
+  useLayoutEffect(() => {
+    const geo = geoRef.current;
+    if (!geo) return;
+    const cur = geo.getAttribute("color") as THREE.BufferAttribute | undefined;
+    if (cur && cur.array.length === colors.length) {
+      cur.set(colors);
+      cur.needsUpdate = true;
+    } else {
+      geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    }
+  }, [colors]);
+
   const handleMove = (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
     if (typeof event.index === "number") onHoverIndex(event.index);
@@ -102,10 +113,7 @@ function PointCloud({
       onPointerOut={interactive ? () => onHoverIndex(null) : undefined}
       onClick={handleSelect}
     >
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-        <bufferAttribute attach="attributes-color" args={[colors, 3]} />
-      </bufferGeometry>
+      <bufferGeometry ref={geoRef} />
       <pointsMaterial
         size={pointSize}
         sizeAttenuation
@@ -162,13 +170,20 @@ function App() {
   const activeElementIndex = ELEMENT_KEYS.indexOf(activeElement);
   const activeElementRange = workerData?.elementRanges[activeElementIndex] ?? { min: 0, max: 1 };
 
-  // Sampled original-data indices for the current display limit
+  // Sampled original-data indices for the current display limit — uniform spacing,
+  // so exactly displayLimit points are returned (no rounding-step discrepancy).
   const sampledIndices = useMemo((): Int32Array => {
     if (!workerData) return new Int32Array(0);
-    const safeLimit = Math.max(1, Math.min(displayLimit, count));
-    const step = Math.max(1, Math.ceil(count / safeLimit));
-    const result = new Int32Array(Math.ceil(count / step));
-    for (let i = 0, j = 0; i < count; i += step, j++) result[j] = i;
+    const n = Math.max(1, Math.min(displayLimit, count));
+    const result = new Int32Array(n);
+    if (n === 1) {
+      result[0] = 0;
+    } else {
+      const span = count - 1;
+      for (let j = 0; j < n; j++) {
+        result[j] = Math.round((j / (n - 1)) * span);
+      }
+    }
     return result;
   }, [workerData, displayLimit, count]);
 
@@ -260,7 +275,12 @@ function App() {
   return (
     <main className="app-shell">
       <aside className="control-panel">
-        <p className="panel-kicker">Moon Basic React App</p>
+        <p className="panel-kicker">
+          Moon Basic React App{" "}
+          <a href="/moon" style={{ color: "#80b7ff", fontSize: 12 }}>
+            Heatmap view →
+          </a>
+        </p>
         <h1 className="panel-title">Lunar Coordinate Explorer</h1>
         <p className="panel-description">
           Visualizing lunar chemistry points where lat/lon are geographical coordinates and
@@ -360,11 +380,11 @@ function App() {
 
         <div className="stats-grid">
           <article>
-            <h2>Total</h2>
+            <h2>Dataset</h2>
             <p>{count.toLocaleString()}</p>
           </article>
-          <article>
-            <h2>Rendered</h2>
+          <article title="Sampled from dataset at even step intervals">
+            <h2>Visible</h2>
             <p>{sampledIndices.length.toLocaleString()}</p>
           </article>
           <article>
@@ -416,6 +436,7 @@ function App() {
 
           {positionBuffer.length > 0 && (
             <PointCloud
+              key={sampledIndices.length}
               positions={positionBuffer}
               colors={colorBuffer}
               pointSize={pointSize}

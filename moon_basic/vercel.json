@@ -1,0 +1,7 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/moon", "destination": "/moon.html" },
+    { "source": "/", "destination": "/index.html" }
+  ]
+}
